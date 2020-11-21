@@ -6,5 +6,7 @@
 # Description:
 EPS = 1e-6
 
+INF = float("inf")
+
 if __name__ == '__main__':
     pass
