@@ -57,7 +57,6 @@ class Heap:
 
     def delete(self, item):
         pos = self.info[item.key]  # 获取该元素位置
-        # print(f"{pos=}")
         last_item = self.data.pop()
         self.info.pop(last_item.key)
         self.size -= 1
@@ -72,7 +71,6 @@ class Heap:
 
     def replace(self, item, new_item):
         pos = self.info[item.key]
-
         self.info.pop(item.key)
         self.info[new_item.key] = pos
         end_pos = self.size

@@ -61,6 +61,7 @@ class BottomLeftStrip:
 class BestFitStrip(BottomLeftStrip):
     """
     思想：先旋转所有工件使得width >= height再按照宽度降序排序(如果宽度相同则高度降序)
+    每次在最低的gap上选择best fit的item
 
     输入:
     items = {item_id: Item(id width height)} -> dict
@@ -69,7 +70,6 @@ class BestFitStrip(BottomLeftStrip):
 
     输出: :return:
           bl.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
-          bl.residual = [Item(id width height)]
 
     调用:
     from uti.items import get_2d_item
@@ -206,46 +206,102 @@ class BestFitStrip(BottomLeftStrip):
         self.set_gap()
 
     def further_optimize(self):
-        raise NotImplementedError("This method has not been implemented!")
+        pass
 
-    def _packing(self, **kwargs):
-        self.items_by_policy = kwargs.get("items")
+    def pack_for_a_bin(self, items, **kwargs):
+        """
+        给定当前items 和一个箱子,装到箱子装完或箱子装不下为止
+        :return 返回布局和剩余工件
+        """
         policy = kwargs.get("policy")
-        # 1. 初始化
-        results = Results()
-        results.h = 0  # 初始高度为0
+        # 每个箱子需要初始化skyline和gap
+        self.skyline = np.zeros(self.width, dtype=int)
+        self.gap = Gap(x=0, y=0, width=self.width)
+        cur = Results()
 
-        # 2.循环放置直到满足终止条件
         while not self.is_terminate:
             # 2.1 选择当前最低gap下能放置的item
-            best_fit_item, index = self.find_best_fit_item(items=self.items_by_policy)
+            best_fit_item, index = self.find_best_fit_item(items=items)
 
             # 2.2 放置这个item(if any)并更新相应布局
             if best_fit_item is not None:
                 # 得到放置后的占角动作(同时更新self.skyline)
                 corner = self.pack_a_item(best_fit_item, policy=policy)
-                results.append(corner)
+                cur.append(corner)
                 self.set_gap()  # 获得当前最低gap
-                self.items_by_policy.pop(index)  # 删除best_fit_item
+                items.pop(index)  # 删除best_fit_item
             else:
                 self.raise_gap()  # raise gap并返回当前最低gap
 
         if self.is_further_optimize:
             self.further_optimize()
+        return cur
 
-        return results
+    def _packing(self, **kwargs):
+        self.items_by_policy = kwargs.get("items")
+        policy = kwargs.get("policy")
+
+        # 注：self.items_by_policy已相应更新为剩余零件
+        cur = self.pack_for_a_bin(self.items_by_policy, policy=policy)
+
+        cur.h = max(cor.y + cor.height for cor in cur)
+        return cur
+
+    def select_schedule_by_policy(self, res):
+        return min(res, key=lambda x: x.h)
 
     def packing(self):
         items = self.preprocessing_for_items()
         res = []
         for policy in ['leftmost', 'tallest', 'smallest']:
             _items = items.copy()
-            self.skyline = np.zeros(self.width, dtype=int)
-            self.gap = Gap(x=0, y=0, width=self.width)
             cur = self._packing(items=_items, policy=policy)
             res.append(cur)
-        bl.results = min(res, key=lambda x: x.h)
+        bl.results = self.select_schedule_by_policy(res)
         return bl.results
+
+
+class BestFitBin(BestFitStrip):
+    """
+    思想：先旋转所有工件使得width >= height再按照宽度降序排序(如果宽度相同则高度降序)
+        在best-fit-strip的基础上设置高度height,若放置item的高度超过,则不放置
+    输入:
+    items = {item_id: Item(id width height)} -> dict
+    width -> int (float)
+    height -> int (float)
+
+    输出: :return:
+          bl.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
+          bl.residual = [Item(id width height)]
+
+    调用:
+    from uti.items import get_2d_item
+    Item = get_2d_item()
+    # items = {item_id: Item(id=item_id, width=width, height=height)}
+    items = {1: Item(id=1, width=1, height=3), 2: Item(id=2, width=2, height=3)}
+    width = 10
+    height = 10
+    bl = BestFitBin(items, height)
+    bl.packing()
+
+    """
+    def __init__(self, items, width, height, *args, **kwargs):
+        super().__init__(items, width, height, *args, **kwargs)
+
+    def _packing(self, **kwargs):
+        self.items_by_policy = kwargs.get("items")
+        policy = kwargs.get("policy")
+
+        schedule = {}
+        k = 0  # 箱子编号
+        while self.items_by_policy:
+            k += 1
+            cur = self.pack_for_a_bin(self.items_by_policy, policy=policy)
+            schedule[k] = cur
+        return schedule
+
+    def select_schedule_by_policy(self, schedule):
+        return min(schedule, key=lambda x: len(x))
 
 
 class EfficientBestFitStrip(BestFitStrip):
@@ -323,6 +379,9 @@ class EfficientBestFitStrip(BestFitStrip):
             return True
         return False
 
+    def further_optimize(self):
+        raise NotImplementedError("")
+
     def find_best_fit_item(self, *args, **kwargs):
         """
         find the best fit item with largest width being less than the seg,
@@ -336,7 +395,6 @@ class EfficientBestFitStrip(BestFitStrip):
         def search(node):
             if node is None:
                 return
-
             if node.key.w > w:
                 search(node.left)
             elif node.key.h > h:
@@ -361,9 +419,9 @@ class EfficientBestFitStrip(BestFitStrip):
         """
 
         node = self.heap.top()
-        seg = node.seg
-        dummy_item = self.bbs.root.value._replace(id=0, width=seg.w, height=min(
-            node.prior.seg.y, node.next.seg.y) - node.seg.y)
+        seg = node.key
+        dummy_item = self.bbs.root.value._replace(id=0, width=seg.width, height=min(
+            node.prior.key.y, node.next.key.y) - node.key.y)
         self.pack_a_item(dummy_item, x=seg.x)
 
     def pack_a_item(self, item, *args, **kwargs):
@@ -393,8 +451,8 @@ class EfficientBestFitStrip(BestFitStrip):
             left = right = True
         if left:
             if new_node.key.y == node.prior.key.y != self.height:
-                merge_node = Node(key=Segment(x=new_node.prior.seg.x, y=new_node.prior.seg.y,
-                                              width=new_node.prior.seg.w + new_node.key.w))
+                merge_node = Node(key=Segment(x=new_node.prior.key.x, y=new_node.prior.key.y,
+                                              width=new_node.prior.key.width + new_node.key.width))
                 self.heap.replace(new_node.prior, merge_node)
                 self.linked_list.replace(new_node.prior, merge_node)
                 self.heap.delete(new_node)
@@ -404,7 +462,7 @@ class EfficientBestFitStrip(BestFitStrip):
         if right:
             if new_node.key.y == node.next.key.y != self.height:
                 merge_node = Node(key=Segment(x=new_node.key.x, y=new_node.key.y,
-                                              width=new_node.key.w + new_node.next.key.w))
+                                              width=new_node.key.width + new_node.next.key.width))
                 self.heap.replace(new_node.next, merge_node)
                 self.linked_list.replace(new_node.next, merge_node)
                 self.heap.delete(new_node)
@@ -453,7 +511,6 @@ class EfficientBestFitStrip(BestFitStrip):
 
         # 循环放置直到满足终止条件
         while not self.is_terminate:
-            # print("ha")
             node = self.heap.top()  # segment with smallest y without popping it from heap
             # find the best-fit item
             item = self.find_best_fit_item(seg=node.key)
@@ -482,10 +539,14 @@ class EfficientBestFitStrip(BestFitStrip):
 
 if __name__ == '__main__':
     from uti.items import get_2d_item
+    import random
 
     Item = get_2d_item()
     # items = {item_id: Item(id=item_id, width=width, height=height)}
-    items = {1: Item(id=1, width=1, height=3), 2: Item(id=2, width=2, height=3)}
+    # items = {1: Item(id=1, width=1, height=3), 2: Item(id=2, width=2, height=3)}
+    n = 10
+    items = {item_id: Item(id=item_id, width=random.randint(1, 10),
+                           height=random.randint(1, 10)) for item_id in range(1, n +1)}
     width = 10
     bl = EfficientBestFitStrip(items, width)
     bl.packing()
