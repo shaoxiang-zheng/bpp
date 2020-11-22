@@ -18,12 +18,12 @@ Efficient-best-fit (EBF)
 """
 from uti.params import INF
 from uti.items import Corner, Gap, Results, Segment, TreeKey
-from uti.tree import BalancedBinaryTree
+from uti.tree import BalancedBinaryTree, IntervalTree
 import numpy as np
 from uti.heap import Heap
 from uti.node import Node
-from uti.linked_list import DoubleLinkList
-import copy
+from uti.linked_list import DoubleLinkList, Deque
+from collections import defaultdict
 
 
 class BottomLeftStrip:
@@ -36,8 +36,7 @@ class BottomLeftStrip:
     height -> int (float)
 
     输出: :return:
-          bl.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
-          bl.residual = [Item(id width height)]
+          self.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
 
     调用:
     from uti.items import get_2d_item
@@ -69,7 +68,7 @@ class BestFitStrip(BottomLeftStrip):
     height -> int (float)
 
     输出: :return:
-          bl.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
+          self.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
 
     调用:
     from uti.items import get_2d_item
@@ -208,16 +207,18 @@ class BestFitStrip(BottomLeftStrip):
     def further_optimize(self):
         pass
 
-    def pack_for_a_bin(self, items, **kwargs):
+    def pack_for_a_bin(self, **kwargs):
         """
         给定当前items 和一个箱子,装到箱子装完或箱子装不下为止
         :return 返回布局和剩余工件
         """
+        items = kwargs.get("items")
         policy = kwargs.get("policy")
         # 每个箱子需要初始化skyline和gap
         self.skyline = np.zeros(self.width, dtype=int)
         self.gap = Gap(x=0, y=0, width=self.width)
         cur = Results()
+        cur.h = 0
 
         while not self.is_terminate:
             # 2.1 选择当前最低gap下能放置的item
@@ -230,6 +231,7 @@ class BestFitStrip(BottomLeftStrip):
                 cur.append(corner)
                 self.set_gap()  # 获得当前最低gap
                 items.pop(index)  # 删除best_fit_item
+                cur.h = max(cur.h, corner.y + corner.height)
             else:
                 self.raise_gap()  # raise gap并返回当前最低gap
 
@@ -242,9 +244,8 @@ class BestFitStrip(BottomLeftStrip):
         policy = kwargs.get("policy")
 
         # 注：self.items_by_policy已相应更新为剩余零件
-        cur = self.pack_for_a_bin(self.items_by_policy, policy=policy)
+        cur = self.pack_for_a_bin(items=self.items_by_policy, policy=policy)
 
-        cur.h = max(cor.y + cor.height for cor in cur)
         return cur
 
     def select_schedule_by_policy(self, res):
@@ -257,8 +258,9 @@ class BestFitStrip(BottomLeftStrip):
             _items = items.copy()
             cur = self._packing(items=_items, policy=policy)
             res.append(cur)
-        bl.results = self.select_schedule_by_policy(res)
-        return bl.results
+        self.results = self.select_schedule_by_policy(res)
+
+        return self.results
 
 
 class BestFitBin(BestFitStrip):
@@ -271,8 +273,7 @@ class BestFitBin(BestFitStrip):
     height -> int (float)
 
     输出: :return:
-          bl.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
-          bl.residual = [Item(id width height)]
+          self.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
 
     调用:
     from uti.items import get_2d_item
@@ -296,7 +297,7 @@ class BestFitBin(BestFitStrip):
         k = 0  # 箱子编号
         while self.items_by_policy:
             k += 1
-            cur = self.pack_for_a_bin(self.items_by_policy, policy=policy)
+            cur = self.pack_for_a_bin(items=self.items_by_policy, policy=policy)
             schedule[k] = cur
         return schedule
 
@@ -317,7 +318,6 @@ class EfficientBestFitStrip(BestFitStrip):
 
     输出: :return:
           bl.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
-          bl.residual = [Item(id width height)]
 
     调用:
     from uti.items import get_2d_item
@@ -332,14 +332,10 @@ class EfficientBestFitStrip(BestFitStrip):
     def __init__(self, items, width, height=INF, *args, **kwargs):
         self.bbs = None
         self.linked_list, self.heap = None, None
-        self.params = []
         super().__init__(items, width, height, *args, **kwargs)
 
     def _init(self):
-        linked_list, heap = self._init_segments()
-
-        bbs = self._init_items()
-        self.params = [linked_list, heap, bbs]
+        pass
 
     def _init_segments(self):
         # 初始化存储segment的最小堆和双向链表
@@ -380,7 +376,7 @@ class EfficientBestFitStrip(BestFitStrip):
         return False
 
     def further_optimize(self):
-        raise NotImplementedError("")
+        pass
 
     def find_best_fit_item(self, *args, **kwargs):
         """
@@ -426,27 +422,28 @@ class EfficientBestFitStrip(BestFitStrip):
 
     def pack_a_item(self, item, *args, **kwargs):
         x = kwargs.get("x")
+        # print(f"{item=}")
         node = self.heap.top()  # segment with smallest y without popping it from heap
         new_node = Node(key=Segment(x=x, y=node.key.y + item.height, width=item.width))
         if new_node.key.y == self.height:
             self.heap.delete(node)
-            self.linked_list.pop(node)
+            self.linked_list.pop_node(node)
         else:
             self.heap.replace(node, new_node)
             self.linked_list.replace(node, new_node)
         assert self.heap.size == self.linked_list.size
-        left = right = False
+        left = right = True
         if x > node.key.x:  # 左侧有空隙
             low_node = Node(key=Segment(x=node.key.x, y=node.key.y, width=x - node.key.x))
             self.heap.push(low_node)
-            self.linked_list.insert_before(node.next, low_node)
-            right = True
+            self.linked_list.insert_after(node.prior, low_node)
+            left = False
         elif x + item.width < node.key.x + node.key.width:  # 右侧有空隙
             low_node = Node(key=Segment(x=new_node.key.x + new_node.key.width, y=node.key.y,
                                         width=node.key.x + node.key.width - new_node.key.x - new_node.key.width))
             self.heap.push(low_node)
-            self.linked_list.insert_after(node.prior, low_node)
-            left = True
+            self.linked_list.insert_before(node.next, low_node)
+            right = False
         else:
             left = right = True
         if left:
@@ -456,7 +453,7 @@ class EfficientBestFitStrip(BestFitStrip):
                 self.heap.replace(new_node.prior, merge_node)
                 self.linked_list.replace(new_node.prior, merge_node)
                 self.heap.delete(new_node)
-                self.linked_list.pop(new_node)
+                self.linked_list.pop_node(new_node)
                 new_node = merge_node
 
         if right:
@@ -466,7 +463,7 @@ class EfficientBestFitStrip(BestFitStrip):
                 self.heap.replace(new_node.next, merge_node)
                 self.linked_list.replace(new_node.next, merge_node)
                 self.heap.delete(new_node)
-                self.linked_list.pop(new_node)
+                self.linked_list.pop_node(new_node)
                 new_node = merge_node
         return new_node
 
@@ -502,12 +499,15 @@ class EfficientBestFitStrip(BestFitStrip):
         else:
             self.bbs.delete(TreeKey(w=item.height, h=item.width, id=item.id))
 
-    def _packing(self, **kwargs):
+    def pack_for_a_bin(self, **kwargs):
+        """
+        在当前bbs(表示items)下装箱
+        """
         policy = kwargs.get("policy")
-        # 初始化
-        res = Results()
-        self.linked_list, self.heap, self.bbs = copy.deepcopy(self.params)
-        res.h = 0
+        # 对每个箱子，linked_list和heap需要初始化，bbs则不用
+        self.linked_list, self.heap = self._init_segments()
+        cur = Results()
+        cur.h = 0
 
         # 循环放置直到满足终止条件
         while not self.is_terminate:
@@ -520,34 +520,519 @@ class EfficientBestFitStrip(BestFitStrip):
                 x, y = self.pack_best_fit_item(item, policy)  # 放置并更新最小堆和双向链表
                 self.update_items_info(item)  # 更新二叉搜索树
 
-                res.append(Corner(id=item.id, x=x, y=y, width=item.width, height=item.height))
-                res.h = max(res.h, y + item.height)
+                cur.append(Corner(id=item.id, x=x, y=y, width=item.width, height=item.height))
+                cur.h = max(cur.h, y + item.height)
 
         if self.is_further_optimize:
             self.further_optimize()
-        return res
+        return cur
+
+    def _packing(self, **kwargs):
+        policy = kwargs.get("policy")
+
+        # 每次装完箱子bbs会自动更新,
+        cur = self.pack_for_a_bin(policy=policy)
+        return cur
+
+    def select_schedule_by_policy(self, res):
+        return min(res, key=lambda x: x.h)
 
     def packing(self):
         res = []
         for policy in ['leftmost', 'tallest', 'smallest']:
-
+            self.bbs = self._init_items()
             cur = self._packing(policy=policy)
             res.append(cur)
-        bl.results = min(res, key=lambda x: x.h)
-        return bl.results
+        self.results = self.select_schedule_by_policy(res)
+        return self.results
+
+
+class EfficientBestFitBin(EfficientBestFitStrip):
+    """
+    思想：在efficient best-fit的基础上
+    (1)每个gap由(x y width)表示，且由最小堆(以y排序)和双向链表(以x排序)来存储所有gap
+    (2)每个item以及副本(如果item.width != item.height)由平衡二叉树存储
+
+    输入:
+    items = {item_id: Item(id width height)} -> dict
+    width -> int (float)
+    height -> int (float)
+
+    输出: :return:
+          self.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
+
+    调用:
+    from uti.items import get_2d_item
+    Item = get_2d_item()
+    # items = {item_id: Item(id=item_id, width=width, height=height)}
+    items = {1: Item(id=1, width=1, height=3), 2: Item(id=2, width=2, height=3)}
+    width = 10
+    height = 10
+    bl = EfficientBestFitBin(items, width, height)
+    bl.packing()
+
+    """
+    def __init__(self, items, width, height, *args, **kwargs):
+        super().__init__(items, width, height, *args, **kwargs)
+
+    def _packing(self, **kwargs):
+        policy = kwargs.get("policy")
+        schedule = {}
+        k = 0
+        while self.bbs.root is not None:  # 还有工件
+            k += 1
+            cur = self.pack_for_a_bin(policy=policy)
+            schedule[k] = cur
+        return schedule
+
+    def select_schedule_by_policy(self, res):
+        return min(res, key=lambda x: len(x))
+
+
+class BestFitPackStrip(EfficientBestFitStrip):
+    """
+    思想:
+    (1)每个gap由(x y width)表示，且由最小堆(以y排序)和双向链表(以x排序)来存储所有gap
+    (2)每个item在现在最低的gap上如果放进去则与当前gap的完美贴边数称之为fitness
+       如果存在多个fitness则选择原输入序列中最靠前的一个
+
+    输入:
+    items = {item_id: Item(id width height)} -> dict
+    width -> int (float)
+    height -> int (float)
+
+    输出: :return:
+          self.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
+
+    调用:
+    from uti.items import get_2d_item
+    Item = get_2d_item()
+    # items = {item_id: Item(id=item_id, width=width, height=height)}
+    items = {1: Item(id=1, width=1, height=3), 2: Item(id=2, width=2, height=3)}
+    width = 10
+    bl = BestFitPackStrip(items, width)
+    bl.packing()
+
+    """
+    def __init__(self, items, width, height=INF, *args, **kwargs):
+        super().__init__(items, width, height, *args, **kwargs)
+        self.packed_id = set()  # 记录当前已经放置的item id
+
+    def _init(self):
+        # 初始化
+
+        self._init_items()
+
+    def _init_items(self):
+        # s1 {(width, height): [index] } 记录特定item在原序列中的位置
+        # s1 以item (width, height)作为字典key值，以便在需要查找特定item时可以直接查找
+        self.s1 = defaultdict(Deque)  # 双向链表添加和删除第一个元素的时间复杂度都为O(1)
+
+        # {index: [item, _item]}  原序列中的位置对应的两个item
+        self.all_items = {}  # 该列表存储所有item及其旋转90°后的item(如果两个item的宽度和高度不等)
+
+        self.id_to_pos = {}  # item id以及其在原序列中的位置
+        for index, item in enumerate(self.items.values()):
+            self.all_items[index] = []
+            if item.width <= self.width and item.height <= self.height:
+                self.all_items[index].append(item)
+                self.s1[item.width, item.height].append(index)
+            if item.width <= self.height and item.width <= self.width and item.width != item.height:
+                self.all_items[index].append(item._replace(width=item.height, height=item.width))
+                self.s1[item.height, item.width].append(index)
+            self.id_to_pos[item.id] = index
+
+        assert len(self.id_to_pos) == len(self.items), "输入items的id不应该相同"
+
+        _items = [item for items in self.all_items.values() for item in items]
+        # s2按照item宽度升序排序(相同宽度按高度升序)
+        # tree2记录给定任意给定两个s2中的区间位置[c, d]之间的最小索引值(当找到多个得分相同的item
+        # 最小的索引即在原序列中位置最靠前的)
+        # id_to_pos2表示指定id和方向的item在s2中的位置(方便在O(1)时间内找到s2中的位置以便更新tree2)
+        self.s2 = sorted(_items, key=lambda x: (x.width, x.height))
+        self.tree2 = IntervalTree([self.id_to_pos[item.id] for item in self.s2])
+        # print(f"{self.tree2.sequence}")
+        # {(id, width): pos}  根据item id和width 定位到 其在s2中的索引
+        self.id_to_pos2 = {(item.id, item.width): index for index, item in enumerate(self.s2)}
+        # s3按照item高度升序排序(相同高度按宽度升序)
+        self.s3 = sorted(_items, key=lambda x: (x.height, x.width))
+        self.tree3 = IntervalTree([self.id_to_pos[item.id] for item in self.s3])
+        self.id_to_pos3 = {(item.id, item.width): index for index, item in enumerate(self.s3)}
+
+    @ property
+    def is_terminate(self):
+        if self.heap.empty():  # 没有放置的位置
+            # print("no place")
+            return True
+        if not self.s1:
+            # print("no item")
+            return True
+        return False
+
+    def pop_item_from_s1(self, w, h):
+        self.s1[w, h].popleft()
+        if self.s1[w, h].empty():
+            self.s1.pop((w, h))
+
+    def update_s1(self, w, h):
+        # 删除item = (w, h)及其旋转副本(如果存在)在链表中的位置
+        self.pop_item_from_s1(w, h)
+        if w != h and (h, w) in self.s1:
+            self.pop_item_from_s1(h, w)
+
+    @staticmethod
+    def satisfy1(sequence, pos, w, h):
+        if sequence[pos].width == w:
+            return True
+        return False
+
+    @staticmethod
+    def to_left1(sequence, pos, w, h):
+        if sequence[pos].width > w:
+            return True
+        return False
+
+    @staticmethod
+    def satisfy2(sequence, pos, w, h):
+        if sequence[pos].width == w and sequence[pos].height <= h:
+            return True
+        return False
+
+    @staticmethod
+    def to_left2(sequence, pos, w, h):
+        if sequence[pos].width > w or (sequence[pos].width == w and sequence[pos].height > h):
+            return True
+        return False
+
+    @staticmethod
+    def satisfy3(sequence, pos, w, h):
+        if sequence[pos].height == h and sequence[pos].width <= w:
+            return True
+        return False
+
+    @staticmethod
+    def to_left3(sequence, pos, w, h):
+        if sequence[pos].height > h or (sequence[pos].height == h and sequence[pos].width > w):
+            return True
+        return False
+
+    @staticmethod
+    def search_index_in_sequence(sequence, w, h, to_left, satisfy):
+        """
+        搜索sequence中满足函数satisfy要求的元素的起止位置，若不存在返回(-1, -1)
+        满足要求的元素一定是连续的
+        :param sequence:
+        :param w:
+        :param h:
+        :param to_left: to_left(sequence, pos, w, h) 判断满足要求的元素在当前元素pos左侧(不包括当前元素)
+        :param satisfy:
+        :return:
+        """
+        def search(left=True):
+            lo, hi = 0, len(sequence)
+            while lo < hi:
+                mid = lo + (hi - lo) // 2
+                if to_left(sequence, mid, w, h) or (left and satisfy(sequence, mid, w, h)):
+                    hi = mid
+                else:
+                    lo = mid + 1
+            return lo
+
+        left_index = search()
+        if left_index == len(sequence) or not satisfy(sequence, left_index, w, h):
+            return -1, -1
+        right_index = search(left=False) - 1
+        return left_index, right_index
+
+    def get_item_by_width(self, index, w):
+        # 通过在原序列中的索引与其与箱子width平行的边的长度寻找对应的item
+        if self.all_items[index][0].width == w:
+            return self.all_items[index][0]
+        return self.all_items[index][1]
+
+    def get_item_by_height(self, index, h):
+        # 通过在原序列中的索引与其与箱子height平行的边的长度寻找对应的item
+        if self.all_items[index][0].height == h:
+            return self.all_items[index][0]
+        return self.all_items[index][1]
+
+    def find_specific_item(self, w, h):
+        if (w, h) in self.s1:
+            index = self.s1[w, h].get_head()  # 返回对应item在原序列中的索引
+            item = self.get_item_by_width(index, w)
+            return item
+        return None
+
+    def find_best_item(self, node, seg, x):
+        if node.prior.key.y == node.next.key.y:  # case 1: s.lh = s.rh
+            # 此类情况fitness只可能取值3, 1, 0
+            # 是否存在fitness == 3的item，同时更新s1
+            w, h = seg.width, node.prior.key.y - seg.y
+            item = self.find_specific_item(w, h)
+            if item is not None:
+                return item, x
+        else:  # case 2: s.lh ！= s.rh
+            # fitness = 2, 1, 0
+            # 是否存在fitness=2的item，返回找到的第一个
+            w, lh, rh = seg.width, node.prior.key.y - seg.y, node.next.key.y - seg.y
+            l_item = self.find_specific_item(w, lh)
+            r_item = self.find_specific_item(w, rh)
+            if l_item is not None and r_item is not None:
+                if self.id_to_pos[l_item.id] <= self.id_to_pos[r_item.id]:
+                    return l_item, x
+                else:
+                    return r_item, x
+            elif l_item is not None:
+                return l_item, x
+            elif r_item is not None:
+                return r_item, x
+        return None, x
+
+    def get_item_with_width(self, w, **kwargs):
+        """
+        在self.s2中找到width=w的item中index最靠前的一个
+        """
+        min_pos, max_pos = self.search_index_in_sequence(
+            self.s2, w, INF, self.to_left1, self.satisfy1)
+        r_index = self.tree2.find_min(min_pos, max_pos)  # 找到元素中最小的id
+        return r_index
+
+    def search_s4_item(self, w, h):
+        """
+        搜索self.s2中最后一个满足item.width <= w的item_id:
+        :param w:
+        :param h:
+        :return:
+        """
+        # print(f"{self.s2=}")
+        index = -1
+        if self.s2[-1].width <= w:
+            index = len(self.s2) - 1
+        if index == -1:
+            left, right = 0, len(self.s2) - 1
+            while left < right:
+                mid = left + (right - left) // 2
+                if not self.s2[mid].width <= w:
+                    right = mid
+                else:
+                    left = mid + 1
+            index = left - 1
+        # print(f"{index=}")
+        if index == -1:  # 不存在
+            return None
+        # print(f"{self.tree2.sequence}")
+        r_index = self.tree2.find_min(0, index)
+        # print(f"{r_index=}")
+        if r_index == INF:
+            return None
+        if self.all_items[r_index][0].width <= w:
+            return self.all_items[r_index][0]
+        return self.all_items[r_index][1]
+
+    def find_second_item(self, node, seg, x):
+        # case 3: 存在fitness = 1的item 取最小的id
+        item_index, item = INF, None
+        # case 3.1 寻找是否存在item.w = seg.w且item.h <= self.h - seg.y的item,若存在,找到id最小的一个
+        r_index = self.get_item_with_width(seg.width, h=self.height - seg.y)
+        if r_index < item_index:
+            item_index, item = r_index, self.get_item_by_width(r_index, seg.width)
+
+        # case 3.2 寻找是否存在item.h = node.prior.key.y and item.w <= seg.w的item
+        # case 3.3 寻找是否存在item.h = node.right.key.y and item.w <= seg.w的item
+        for h in [node.prior.key.y - seg.y, node.next.key.y - seg.y]:
+            min_pos, max_pos = self.search_index_in_sequence(self.s3, seg.width, h, self.to_left3, self.satisfy3)
+            r_index = self.tree3.find_min(min_pos, max_pos)
+            if r_index < item_index:
+                item_id, item = r_index, self.get_item_by_height(r_index, h)
+        if item_index < INF:
+            if item.height == node.next.key.y:
+                x = seg.x + seg.width - item.width
+            return item, x
+        return None, x
+
+    def find_third_item(self, node, seg, x):
+        # print(f"{seg=}")
+        # case 4: 找到fitness = 0的item
+        item = self.search_s4_item(seg.width, self.height - seg.y)
+        # print(f"{item=}")
+        if item is not None:
+            if node.prior.key.y < node.next.key.y:
+                x = seg.x + seg.width - item.width
+        return item, x
+
+    def find_best_fit_item(self, *args, **kwargs):
+        node = kwargs.get("node")
+        seg = node.key
+        x = seg.x
+        # print(f"all items = {self.s1}")
+
+        # step 1: 判断是否存在fitness = 3 or 2的item
+        item, x = self.find_best_item(node, seg, x)
+        if item is not None:
+            return item, x
+        # print(f"best = {item}")
+        # step 2: 判断是否存在fitness = 1的item
+        item, x = self.find_second_item(node, seg, x)
+        if item is not None:
+            return item, x
+        # print(f"second = {item}")
+        # step 3: 判断是否存在fitness = 0的item
+        item, x = self.find_third_item(node, seg, x)
+        if item is not None:
+            return item, x
+        # print(f"third = {item}")
+        return None, x
+
+    def raise_gap(self):
+        node = self.heap.top()
+        seg = node.key
+        dummy_item = self.s2[0]._replace(id=0, width=seg.width, height=min(
+            node.prior.key.y, node.next.key.y) - node.key.y)
+        self.pack_a_item(dummy_item, x=seg.x)
+
+    def update_items_info(self, item):
+        """
+        更新s1 s2 s3
+        :param item:
+        :return:
+        """
+        self.packed_id.add(item.id)
+
+        # update s1
+        # 在存储元素的s1中删除item及其旋转后的副本(如果存在的话),s2和s3不需要更新
+        # 如果双向链表为空，还需删除对应的字典key值
+        w, h = item.width, item.height
+
+        self.update_s1(w, h)
+
+        # s2, s3无需更新
+
+        # update tree2, tree3
+        # 主要更新s2中对应区间位置[c, d]内id的最小值(先将已经放置的id位置置为inf,若item存在旋转后的副本,则需要删除两个位置)
+        pos = self.id_to_pos2[item.id, item.width]
+        self.tree2.delete(pos)
+        if item.width != item.height:
+            pos = self.id_to_pos2[item.id, item.height]
+            self.tree2.delete(pos)
+
+        pos = self.id_to_pos3[item.id, item.width]
+        self.tree3.delete(pos)
+        if item.width != item.height:
+            pos = self.id_to_pos3[item.id, item.height]
+            self.tree3.delete(pos)
+
+    def pack_for_a_bin(self, **kwargs):
+        cur = Results()
+        cur.h = 0
+        self.linked_list, self.heap = self._init_segments()
+        while not self.is_terminate:
+            node = self.heap.top()
+            # print(f"lowest segment = {node.key}")
+            y = node.key.y  # 最低gap的高度
+            # 返回寻找到的最好的item(得分最高，多个得分相同则在原序列中最靠前的一个)及其放置的x位置
+            item, x = self.find_best_fit_item(node=node)
+            # print(f"{x=}")
+            # print(f"best fit {item=}\n")
+            if item is None:
+                self.raise_gap()
+            else:
+                self.pack_a_item(item, x=x)
+                self.update_items_info(item)
+
+                cur.append(Corner(id=item.id, x=x, y=y, width=item.width, height=item.height))
+                cur.h = max(cur.h, y + item.height)
+            # print(f"{self.heap=}\n{self.linked_list=}")
+
+        if self.is_further_optimize:
+            self.further_optimize()
+        return cur
+
+    def _packing(self, **kwargs):
+        cur = self.pack_for_a_bin()
+        return cur
+
+    def packing(self):
+        self.results = self._packing()
+        return self.results
+
+
+class BestFitPackBin(BestFitPackStrip):
+    """
+    思想:
+    (1)每个gap由(x y width)表示，且由最小堆(以y排序)和双向链表(以x排序)来存储所有gap
+    (2)每个item在现在最低的gap上如果放进去则与当前gap的完美贴边数称之为fitness
+       如果存在多个fitness则选择原输入序列中最靠前的一个
+
+    输入:
+    items = {item_id: Item(id width height)} -> dict
+    width -> int (float)
+    height -> int (float)
+
+    输出: :return:
+          self.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
+
+    调用:
+    from uti.items import get_2d_item
+    Item = get_2d_item()
+    # items = {item_id: Item(id=item_id, width=width, height=height)}
+    items = {1: Item(id=1, width=1, height=3), 2: Item(id=2, width=2, height=3)}
+    width = 10
+    height = 10
+    bl = BestFitPackStrip(items, width, height)
+    bl.packing()
+
+    """
+    def __init__(self, items, width, height, *args, **kwargs):
+        super().__init__(items, width, height, *args, **kwargs)
+
+    def search_s4_item(self, w, h):
+        """
+        搜索self.all_items中第一个满足item.width <= w and item.height <= h的item_id:
+        :param w:
+        :param h:
+        :return:
+        """
+        for items in self.all_items.values():
+            for item in items:
+                if item.width <= w and item.height <= h and item.id not in self.packed_id:
+                    return item
+        return None
+
+    def get_item_with_width(self, w, **kwargs):
+        """
+        在self.s2中找到width=w且height<=h的item中index最靠前的一个
+        """
+        h = kwargs.get("h")
+        min_pos, max_pos = self.search_index_in_sequence(self.s2, w, h, self.to_left2, self.satisfy2)
+        r_index = self.tree2.find_min(min_pos, max_pos)  # 找到元素中最小的id
+        return r_index
+
+    def _packing(self, **kwargs):
+        schedule = {}
+        k = 0
+        while self.s1:  # 当还存在items未排
+            k += 1
+            schedule[k] = self.pack_for_a_bin()
+        return schedule
+
+
+class COA:
+    pass
 
 
 if __name__ == '__main__':
     from uti.items import get_2d_item
     import random
-
+    from uti.draw import draw_2d_pattern
     Item = get_2d_item()
     # items = {item_id: Item(id=item_id, width=width, height=height)}
-    # items = {1: Item(id=1, width=1, height=3), 2: Item(id=2, width=2, height=3)}
     n = 10
     items = {item_id: Item(id=item_id, width=random.randint(1, 10),
-                           height=random.randint(1, 10)) for item_id in range(1, n +1)}
+                           height=random.randint(1, 10)) for item_id in range(1, n + 1)}
+
     width = 10
-    bl = EfficientBestFitStrip(items, width)
+    height = INF
+    bl = BestFitPackStrip(items, width, height=height)
     bl.packing()
+    draw_2d_pattern(bl.results, width, height)
     print(f"{bl.results=}")
