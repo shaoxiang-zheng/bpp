@@ -120,5 +120,38 @@ class BasicModel(ABC):
         return self.model  # 返回求解后的模型
 
 
+class SetCovering:
+    def __init__(self):
+        self.rmp = None
+        self.solve()
+
+    def init_rmp(self):
+        pass
+
+    def pricing(self, dual):
+        """
+        :param dual
+        :return
+        """
+        return 0, []
+
+    def add_column(self, coe):
+        pass
+
+    def solve(self):
+        self.init_rmp()  # 初始化限制主问题
+
+        while True:
+            self.rmp.optimize()  # 求解限制主问题
+
+            dual = self.rmp.getAttr(GRB.Attr.Pi)  # 获取各约束对偶变量
+
+            reduced_cost, coe = self.pricing(dual)  # 获取reduced cost
+
+            if reduced_cost + EPS >= 0:
+                break
+            self.add_column(coe)  # 为模型添加列
+
+
 if __name__ == '__main__':
     pass
