@@ -4,7 +4,7 @@
 # Author: Zheng Shaoxiang
 # @Email : zhengsx95@163.com
 # Description:
-from uti.node import Node
+from utility.node import Node
 from functools import reduce
 
 

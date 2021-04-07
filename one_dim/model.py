@@ -11,8 +11,8 @@
 一维背包问题 (one-dimensional knapsack problem)
 一维批调度问题 (one-dimensional single batch machine problem)
 """
-from uti.basicmodel import BasicModel
-from uti.basicmodel import GRB, tuplelist, quicksum
+from utility.basicmodel import BasicModel
+from utility.basicmodel import GRB, tuplelist, quicksum
 
 
 class BinPacking(BasicModel):
@@ -24,7 +24,7 @@ class BinPacking(BasicModel):
     items = {item_id: Item(id width)} -> dict
     width -> int (float)
     调用:
-    from uti.items import get_1d_item
+    from utility.items import get_1d_item
     Item = get_1d_item()
     # items = {item_id: Item(id=item_id, width=width)}
     items = {1: Item(id=1, width=1), 2: Item(id=2, width=2)}
@@ -97,7 +97,7 @@ class Cutting(BinPacking):
     items = {item_id: Item(id width demand)} -> dict
     width -> int (float)
     调用:
-    from uti.items import get_1d_item
+    from utility.items import get_1d_item
     Item = get_1d_item("demand")
     # items = {item_id: Item(id=item_id, width=width, demand=demand)}
     items = {1: Item(id=1, width=1, demand=3), 2: Item(id=2, width=2, demand=3)}
@@ -133,7 +133,7 @@ class Knapsack(BinPacking):
     items = {item_id: Item(id width profit)} -> dict
     width -> int (float)
     调用:
-    from uti.items import get_1d_item
+    from utility.items import get_1d_item
     Item = get_1d_item("profit")
     # items = {item_id: Item(id=item_id, width=width, profit=profit)}
     items = {1: Item(id=1, width=1, profit=3), 2: Item(id=2, width=2, profit=3)}
@@ -176,7 +176,7 @@ class SingleBatch(BinPacking):
     items = {item_id: Item(id width processing_time)} -> dict
     width -> int (float)
     调用:
-    from uti.items import get_1d_item
+    from utility.items import get_1d_item
     Item = get_1d_item("processing_time")
     # items = {item_id: Item(id=item_id, width=width, processing_time=processing_time)}
     items = {1: Item(id=1, width=1, processing_time=3), 2: Item(id=2, width=2, processing_time=3)}
@@ -207,7 +207,7 @@ class SingleBatch(BinPacking):
 
 
 if __name__ == '__main__':
-    from uti.items import get_1d_item
+    from utility.items import get_1d_item
 
     Item = get_1d_item("processing_time")
     items = {1: Item(id=1, width=7, processing_time=2), 2: Item(id=2, width=4, processing_time=3)}

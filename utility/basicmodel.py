@@ -6,7 +6,7 @@
 # Description: 定义了一个针对一般混合整数规划模型的求解框架
 from gurobipy import *
 import psutil
-from uti.params import EPS
+from utility.params import EPS
 
 from abc import ABC, abstractmethod
 
@@ -38,7 +38,7 @@ class BasicModel(ABC):
         self.print_variable_flag = kwargs.get("print_variable_flag", False)
 
     def set_params(self):
-        self.model.Params.Threads = self.threads
+        # self.model.Params.Threads = self.threads
         self.model.Params.OutputFlag = self.output_flag
         self.model.Params.TimeLimit = self.time_limit
 
@@ -90,8 +90,9 @@ class BasicModel(ABC):
                     model.terminate()
 
         # 调用构建模型的方法
-        self.build_model()  # build the model
-        self.model.update()
+        if self.model.NumConstrs > 0:  # 表示已经构建了模型
+            self.build_model()  # build the model
+            self.model.update()
 
         if self.init_sol_flag:  # if the flag is True, generate initial solutions and use them.
             self.add_init_sol()
@@ -99,7 +100,6 @@ class BasicModel(ABC):
 
         self.set_params()
 
-        # self.model.write("1.lp")
         if self.bound is None:  # when the lower bound is generated, use it for callback
             self.model.optimize()
         else:
@@ -117,6 +117,7 @@ class BasicModel(ABC):
             self.print_variables()
 
         self.do_something()  # 处理后处理
+        
         return self.model  # 返回求解后的模型
 
 

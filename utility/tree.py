@@ -4,8 +4,8 @@
 # Author: Zheng Shaoxiang
 # @Email : zhengsx95@163.com
 # Description:
-from uti.node import TreeNode
-from uti.params import INF
+from utility.node import TreeNode
+from utility.params import INF
 
 
 class BalancedBinaryTree:

@@ -10,7 +10,7 @@
 best fit first (BF)
 first fit first (FF)
 """
-from uti.params import INF
+from utility.params import INF
 
 
 class FirstFit:
@@ -23,7 +23,7 @@ class FirstFit:
     items = {item_id: Item(id width)} -> dict
     width -> int (float)
     调用:
-    from uti.items import get_1d_item
+    from utility.items import get_1d_item
     Item = get_1d_item()
     # items = {item_id: Item(id=item_id, width=width)}
     items = {1: Item(id=1, width=1), 2: Item(id=2, width=2)}
@@ -72,7 +72,7 @@ class BestFit(FirstFit):
     items = {item_id: Item(id width)} -> dict
     width -> int (float)
     调用:
-    from uti.items import get_1d_item
+    from utility.items import get_1d_item
     Item = get_1d_item()
     # items = {item_id: Item(id=item_id, width=width)}
     items = {1: Item(id=1, width=1), 2: Item(id=2, width=2)}
@@ -99,7 +99,7 @@ class BestFit(FirstFit):
 
 
 if __name__ == '__main__':
-    from uti.items import get_1d_item
+    from utility.items import get_1d_item
 
     Item = get_1d_item()
     # items = {item_id: Item(id=item_id, width=width)}

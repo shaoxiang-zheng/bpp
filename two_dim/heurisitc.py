@@ -16,13 +16,13 @@ Bottom-left (BL)
 Best-fit (BF)
 Efficient-best-fit (EBF)
 """
-from uti.params import INF
-from uti.items import Corner, Gap, Results, Segment, TreeKey
-from uti.tree import BalancedBinaryTree, IntervalTree
+from utility.params import INF
+from utility.items import Corner, Gap, Results, Segment, TreeKey
+from utility.tree import BalancedBinaryTree, IntervalTree
 import numpy as np
-from uti.heap import Heap
-from uti.node import Node
-from uti.linked_list import DoubleLinkList, Deque
+from utility.heap import Heap
+from utility.node import Node
+from utility.linked_list import DoubleLinkList, Deque
 from collections import defaultdict
 
 
@@ -39,7 +39,7 @@ class BottomLeftStrip:
           self.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
 
     调用:
-    from uti.items import get_2d_item
+    from utility.items import get_2d_item
     Item = get_2d_item()
     # items = {item_id: Item(id=item_id, width=width, height=height)}
     items = {1: Item(id=1, width=1, height=3), 2: Item(id=2, width=2, height=3)}
@@ -71,7 +71,7 @@ class BestFitStrip(BottomLeftStrip):
           self.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
 
     调用:
-    from uti.items import get_2d_item
+    from utility.items import get_2d_item
     Item = get_2d_item()
     # items = {item_id: Item(id=item_id, width=width, height=height)}
     items = {1: Item(id=1, width=1, height=3), 2: Item(id=2, width=2, height=3)}
@@ -276,7 +276,7 @@ class BestFitBin(BestFitStrip):
           self.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
 
     调用:
-    from uti.items import get_2d_item
+    from utility.items import get_2d_item
     Item = get_2d_item()
     # items = {item_id: Item(id=item_id, width=width, height=height)}
     items = {1: Item(id=1, width=1, height=3), 2: Item(id=2, width=2, height=3)}
@@ -320,7 +320,7 @@ class EfficientBestFitStrip(BestFitStrip):
           bl.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
 
     调用:
-    from uti.items import get_2d_item
+    from utility.items import get_2d_item
     Item = get_2d_item()
     # items = {item_id: Item(id=item_id, width=width, height=height)}
     items = {1: Item(id=1, width=1, height=3), 2: Item(id=2, width=2, height=3)}
@@ -446,8 +446,8 @@ class EfficientBestFitStrip(BestFitStrip):
             right = False
         else:
             left = right = True
-        if left:
-            if new_node.key.y == node.prior.key.y != self.height:
+        if left:  # leftmost
+            if new_node.key.y == node.prior.key.y != self.height and new_node.key.x == node.prior.key.x + node.prior.key.width:
                 merge_node = Node(key=Segment(x=new_node.prior.key.x, y=new_node.prior.key.y,
                                               width=new_node.prior.key.width + new_node.key.width))
                 self.heap.replace(new_node.prior, merge_node)
@@ -457,7 +457,7 @@ class EfficientBestFitStrip(BestFitStrip):
                 new_node = merge_node
 
         if right:
-            if new_node.key.y == node.next.key.y != self.height:
+            if new_node.key.y == node.next.key.y != self.height and new_node.key.x + new_node.key.width == node.next.key.x:
                 merge_node = Node(key=Segment(x=new_node.key.x, y=new_node.key.y,
                                               width=new_node.key.width + new_node.next.key.width))
                 self.heap.replace(new_node.next, merge_node)
@@ -562,7 +562,7 @@ class EfficientBestFitBin(EfficientBestFitStrip):
           self.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
 
     调用:
-    from uti.items import get_2d_item
+    from utility.items import get_2d_item
     Item = get_2d_item()
     # items = {item_id: Item(id=item_id, width=width, height=height)}
     items = {1: Item(id=1, width=1, height=3), 2: Item(id=2, width=2, height=3)}
@@ -605,7 +605,7 @@ class BestFitPackStrip(EfficientBestFitStrip):
           self.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
 
     调用:
-    from uti.items import get_2d_item
+    from utility.items import get_2d_item
     Item = get_2d_item()
     # items = {item_id: Item(id=item_id, width=width, height=height)}
     items = {1: Item(id=1, width=1, height=3), 2: Item(id=2, width=2, height=3)}
@@ -886,8 +886,17 @@ class BestFitPackStrip(EfficientBestFitStrip):
     def raise_gap(self):
         node = self.heap.top()
         seg = node.key
-        dummy_item = self.s2[0]._replace(id=0, width=seg.width, height=min(
-            node.prior.key.y, node.next.key.y) - node.key.y)
+        if node.prior.key.x + node.prior.key.width == node.key.x:
+            height = node.prior.key.y
+        else:
+            height = self.height
+
+        if node.next.key.x == node.key.x + node.key.width:
+            height = min(height, node.next.key.y)
+        else:
+            height = min(height, self.height)
+        dummy_item = self.s2[0]._replace(id=0, width=seg.width, height=height - node.key.y)
+        # print(f"{dummy_item=}\n{seg=}\n{node=}")
         self.pack_a_item(dummy_item, x=seg.x)
 
     def update_items_info(self, item):
@@ -945,14 +954,16 @@ class BestFitPackStrip(EfficientBestFitStrip):
 
         if self.is_further_optimize:
             self.further_optimize()
+        # print(f"{cur=}")
         return cur
 
     def _packing(self, **kwargs):
         cur = self.pack_for_a_bin()
         return cur
 
-    def packing(self):
-        self.results = self._packing()
+    def packing(self, **kwargs):
+        batch_limit = kwargs.get("batch_limit", INF)
+        self.results = self._packing(batch_limit=batch_limit)
         return self.results
 
 
@@ -972,13 +983,13 @@ class BestFitPackBin(BestFitPackStrip):
           self.results = [Corner(id= x= y= width= height=),...] list[<class Corner>]
 
     调用:
-    from uti.items import get_2d_item
+    from utility.items import get_2d_item
     Item = get_2d_item()
     # items = {item_id: Item(id=item_id, width=width, height=height)}
     items = {1: Item(id=1, width=1, height=3), 2: Item(id=2, width=2, height=3)}
     width = 10
     height = 10
-    bl = BestFitPackStrip(items, width, height)
+    bl = BestFitPackBin(items, width, height)
     bl.packing()
 
     """
@@ -1008,9 +1019,11 @@ class BestFitPackBin(BestFitPackStrip):
         return r_index
 
     def _packing(self, **kwargs):
+        batch_limit = kwargs.get("batch_limit", INF)
+        assert batch_limit >= 1
         schedule = {}
         k = 0
-        while self.s1:  # 当还存在items未排
+        while self.s1 and k < batch_limit:  # 当还存在items未排
             k += 1
             schedule[k] = self.pack_for_a_bin()
         return schedule
@@ -1021,9 +1034,9 @@ class COA:
 
 
 if __name__ == '__main__':
-    from uti.items import get_2d_item
+    from utility.items import get_2d_item
     import random
-    from uti.draw import draw_2d_pattern
+    from utility.draw import draw_2d_pattern
     Item = get_2d_item()
     # items = {item_id: Item(id=item_id, width=width, height=height)}
     n = 10

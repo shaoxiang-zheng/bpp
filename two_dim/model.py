@@ -13,7 +13,7 @@
 二维批调度问题 (two-dimensional single batch machine scheduling problem)
 """
 from one_dim.model import BinPacking, Cutting, Knapsack, SingleBatch
-from uti.basicmodel import GRB, tuplelist, quicksum
+from utility.basicmodel import GRB, tuplelist, quicksum
 
 
 class OrthogonalPacking(Knapsack):
@@ -31,7 +31,7 @@ class OrthogonalPacking(Knapsack):
     width -> int (float)
     height -> int (float)
     调用:
-    from uti.items import get_2d_item
+    from utility.items import get_2d_item
     Item = get_2d_item()
     # items = {item_id: Item(id=item_id, width=width, height=height)}
     items = {1: Item(id=1, width=1, height=3), 2: Item(id=2, width=2, height=3)}
@@ -88,7 +88,7 @@ class OrthogonalKnapsack(OrthogonalPacking):
     width -> int (float)
     height -> int (float)
     调用:
-    from uti.items import get_2d_item
+    from utility.items import get_2d_item
     Item = get_2d_item("profit")
     # items = {item_id: Item(id=item_id, width=width, height=height, profit=profit)}
     items = {1: Item(id=1, width=1, height=3, profit=2), 2: Item(id=2, width=2, height=3, profit=2)}
@@ -120,7 +120,7 @@ class OrthogonalBinPacking(BinPacking):
     width -> int (float)
     height -> int (float)
     调用:
-    from uti.items import get_2d_item
+    from utility.items import get_2d_item
     Item = get_2d_item()
     # items = {item_id: Item(id=item_id, width=width, height=height)}
     items = {1: Item(id=1, width=1, height=3), 2: Item(id=2, width=2, height=3)}
@@ -191,7 +191,7 @@ class OrthogonalSingleBatch(OrthogonalBinPacking):
     width -> int (float)
     height -> int (float)
     调用:
-    from uti.items import get_2d_item
+    from utility.items import get_2d_item
     Item = get_2d_item("processing_time")
     # items = {item_id: Item(id=item_id, width=width, height=height, processing_time=processing_time)}
     items = {1: Item(id=1, width=1, height=3, processing_time=3), 2: Item(id=2, width=2, height=3, processing_time=3)}
@@ -218,7 +218,7 @@ class OrthogonalSingleBatch(OrthogonalBinPacking):
 
 
 if __name__ == '__main__':
-    from uti.items import get_2d_item
+    from utility.items import get_2d_item
 
     Item = get_2d_item()
     # items = {item_id: Item(id=item_id, width=width, height=height)}

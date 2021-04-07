@@ -182,7 +182,7 @@ class BinPackingBound(oneBpb):
 
 
 if __name__ == '__main__':
-    from uti.items import get_2d_item
+    from utility.items import get_2d_item
     import random
     # random.seed(0)
     Item = get_2d_item()
